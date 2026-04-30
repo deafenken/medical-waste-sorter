@@ -88,6 +88,19 @@ packages = ["src"]
 # Faster Pi installs by preferring binary wheels.
 prerelease = "disallow"
 
+# Force torch / torchvision to the CPU-only PyTorch index. Without this,
+# `ultralytics` pulls the default x86_64 CUDA wheel which drags in ~1.6 GB
+# of nvidia-* CUDA libraries — useless on Pi 5 / Hailo / RKNN / Mac.
+# CPU wheels exist for linux_aarch64, linux_x86_64, macOS, and Windows.
+[tool.uv.sources]
+torch = [{ index = "pytorch-cpu" }]
+torchvision = [{ index = "pytorch-cpu" }]
+
+[[tool.uv.index]]
+name = "pytorch-cpu"
+url = "https://download.pytorch.org/whl/cpu"
+explicit = true
+
 # Use Tsinghua mirror for users in mainland China — uncomment if needed,
 # or set globally via:  uv pip config set global.index-url <mirror>
 # [[tool.uv.index]]

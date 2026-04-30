@@ -15,7 +15,12 @@ dependencies = [
     # Detection
     "ultralytics>=8.1",                # YOLO + .pt + ncnn export
     # RealSense (D405 / D435 / D435i / D455)
-    "pyrealsense2>=2.55",
+    # NOTE: pyrealsense2 has no aarch64 wheel on PyPI. On Pi 5 / ARM64, install
+    # it by source-building librealsense with -DBUILD_PYTHON_BINDINGS=true,
+    # then symlink the .so into the project venv. Commented out so `uv sync`
+    # works on ARM64 hosts; users on x86_64 can re-enable or run
+    #   uv pip install pyrealsense2
+    # "pyrealsense2>=2.55",
 ]
 
 [project.optional-dependencies]
@@ -37,10 +42,11 @@ panthera = [
     "scipy>=1.9",
 ]
 
-# Intel RealSense Python bindings — already in the core list because D405
-# is the project's recommended camera, kept here as an alias.
+# Intel RealSense Python bindings.
+# NOTE: only opt-in on x86_64 — PyPI has no aarch64 wheel. ARM64 users must
+# build librealsense from source (see docs/TROUBLESHOOTING.md).
 realsense = [
-    "pyrealsense2>=2.55",
+    # "pyrealsense2>=2.55",
 ]
 
 # RK3588 NPU runtime (board-specific Python wheels live in the RK release).

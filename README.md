@@ -56,7 +56,7 @@ flowchart LR
 - **多帧投票 + IoU 跟踪**：连续 N 帧检测到同一物体才触发抓取，削掉偶发误检
 - **双阈值（hysteresis）**：低阈值画框、高阈值抓取
 - **模型预热**：消除第一帧 1-2 秒冷启动开销
-- 后端可插拔：YOLOv8 推理 PyTorch / NCNN / ONNX / RKNN 一键切换
+- 后端可插拔：YOLOv8 推理 PyTorch / NCNN / **Hailo-8** / RKNN / ONNX 一键切换
 - INT8 量化导出脚本：Pi 上速度 ~2x、RK3588 NPU 必需
 - 全配置文件驱动：换硬件不动代码，只动 `config.yaml`
 
@@ -101,6 +101,7 @@ medical-waste-sorter/
 │
 └── docs/
     ├── DEPLOY.md                  -- ⭐ 完整部署流程（从开箱到跑起来）
+    ├── HAILO.md                   -- Hailo-8 NPU 部署指南（Pi 5 + Hailo-8 26 TOPS）
     ├── OPTIMIZATION.md            -- 识别模型优化（投票/双阈值/INT8）
     ├── PANTHERA_HT.md             -- Panthera-HT 6DOF 臂适配档案（FDCAN）
     ├── BOM.md                     -- 完整硬件清单
@@ -127,21 +128,32 @@ medical-waste-sorter/
 | 标定 | 5cm × 5cm ArUco 7×7 标定卡 |
 | 加速（可选） | Hailo-8L 模块或 Coral USB |
 
-### 1. 克隆 & 装系统
+### 1. 克隆 & 装系统（uv 管理）
 
 ```bash
-git clone https://github.com/<你的用户名>/medical-waste-sorter.git
+git clone https://github.com/deafenken/medical-waste-sorter.git
 cd medical-waste-sorter
 
-# 一键安装（apt / venv / OpenNI2 / udev / NCNN export）
+# 一键安装：apt / uv / .venv / pyproject 依赖 / RealSense / 可选 SDK
 chmod +x scripts/install_pi.sh
 ./scripts/install_pi.sh
-# 完成后注销重登（dialout 权限生效）
+
+# 想同时装 Hailo-8 / Panthera SDK / Orbbec 任意组合：
+HAILO_SDK=1 PANTHERA_SDK=1 ./scripts/install_pi.sh
 ```
 
-脚本做了什么：装 apt 依赖、创建 `venv/`、装 Python 包、克隆并编译
-**OpenNI2 ARM64**、安装 Orbbec udev 规则、复制 `config.example.yaml`
-为 `config.yaml`、把 OpenNI2 路径写进配置、把 `best.pt` 导出为 NCNN。
+脚本做了什么：
+
+- 装 apt 依赖（cmake / libusb / opencv 等）
+- 把当前用户加 `dialout` 组（串口权限）
+- 装 **uv**（如果还没装）
+- `uv venv` 创建 `.venv/`，`uv sync` 装核心 Python 依赖
+- 装 Intel RealSense（默认，D405 用）
+- 可选：`ORBBEC_SDK=1` 编译 OpenNI2 ARM64 + Orbbec udev 规则
+- 可选：`HAILO_SDK=1` 装 HailoRT + hailo-platform（要求把 .deb / .whl 文件先放到 `~/hailo/`，详见 [docs/HAILO.md](docs/HAILO.md)）
+- 可选：`PANTHERA_SDK=1` 源码编译 Panthera-HT 机械臂 SDK
+- 复制 `config.example.yaml` → `config.yaml`
+- `best.pt` 导出为 NCNN（用作 fallback 后端）
 
 ### 2. 配置
 
@@ -163,19 +175,19 @@ detector:
 ### 3. 验证设备（顺序很重要）
 
 ```bash
-source venv/bin/activate
+source .venv/bin/activate    # 或者用 uv run <command> 不激活也行
 
 # 3.1 串口能通吗？看到 "Grbl" 或 "Marlin" 字样就对了
-python tools/port_probe.py --port /dev/ttyUSB0
+uv run python tools/port_probe.py --port /dev/ttyUSB0
 
 # 3.2 手动 jog 一下机械臂；执行 home / move / grip
-python tools/test_arm.py
+uv run python tools/test_arm.py
 
 # 3.3 相机能出深度图吗？双击图像应该打印 3D 坐标
-python tools/depth_inspect.py
+uv run python tools/depth_inspect.py
 
 # 3.4 打印 ArUco 卡，能否被识别？
-python tools/aruco_demo.py
+uv run python tools/aruco_demo.py
 ```
 
 任何一步过不去先看 [docs/TROUBLESHOOTING.md](docs/TROUBLESHOOTING.md)。
@@ -203,7 +215,19 @@ python -m src.main
 
 ---
 
-## 切换到 RK3588 NPU
+## 切换到 Hailo-8 NPU（Pi 5 + Hailo-8 26 TOPS）
+
+Pi 5 + Hailo-8 实测 30+ FPS（YOLOv8n @ 640）。完整流程见
+[docs/HAILO.md](docs/HAILO.md)。简版四步：
+
+1. PC（x86_64 Ubuntu 22.04）上把 `best.pt` → `best.onnx` → `best.hef`
+   （需 Hailo Dataflow Compiler）
+2. Pi 上 `~/hailo/` 放好 HailoRT `.deb` 和 `hailo_platform` `.whl`，
+   跑 `HAILO_SDK=1 ./scripts/install_pi.sh`
+3. `scp best.hef` 到 Pi 的 `models/` 目录
+4. 改 `config.yaml`：`detector.backend: hailo` + `model_path: models/best.hef`
+
+## 切换到 RK3588 NPU（备用平台）
 
 YOLO 在 RK3588 上跑 NPU 比 Pi 5 CPU 快 ~5x。迁移路径：
 

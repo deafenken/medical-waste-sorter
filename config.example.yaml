@@ -134,15 +134,18 @@ arm:
 
 # ============ 检测模型配置 ============
 detector:
-  # 推理后端: pytorch | ncnn | rknn | onnx
-  #   pytorch -> 加载 .pt（CPU/GPU），开发调试用
-  #   ncnn    -> Pi 推荐，~3-5x 加速
+  # 推理后端: pytorch | ncnn | hailo | rknn | onnx
+  #   pytorch -> 加载 .pt（CPU/GPU），开发调试用，慢
+  #   ncnn    -> Pi CPU 推荐，~3-5x 加速
+  #   hailo   -> Pi 5 + Hailo-8 NPU 推荐，30+ FPS 实测
   #   rknn    -> RK3588 NPU，需要先离线转换
   #   onnx    -> 通用，CPU runtime
   backend: ncnn
 
   # 模型路径（相对仓库根目录或绝对路径）
-  # ncnn 模式下传入 best_ncnn_model 目录路径
+  # ncnn 模式 -> best_ncnn_model 目录
+  # hailo 模式 -> models/best.hef 文件
+  # rknn  模式 -> models/best.rknn 文件
   model_path: models/best_ncnn_model
 
   # ----- 推理超参（速度↔精度权衡）-----

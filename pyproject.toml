@@ -1,0 +1,89 @@
+[project]
+name = "medical-waste-sorter"
+version = "0.1.0"
+description = "YOLOv8 + depth camera + 6-DOF arm to auto-sort medical waste on Pi 5 + Hailo-8 / RK3588"
+requires-python = ">=3.10,<3.13"
+readme = "README.md"
+authors = [{ name = "deafenken" }]
+
+dependencies = [
+    # Core
+    "numpy>=1.24",
+    "opencv-contrib-python>=4.8",     # contrib provides cv2.aruco
+    "pyyaml>=6.0",
+    "pyserial>=3.5",
+    # Detection
+    "ultralytics>=8.1",                # YOLO + .pt + ncnn export
+    # RealSense (D405 / D435 / D435i / D455)
+    "pyrealsense2>=2.55",
+]
+
+[project.optional-dependencies]
+# Pick whichever camera/arm/accelerator subset you need. uv installs them on
+# demand:  uv sync --extra hailo  (or --extra orbbec, --extra panthera, ...)
+
+# Orbbec Astra Pro / Astra+ via OpenNI2.
+# Requires OpenNI2 native libraries already installed on the host.
+orbbec = [
+    "primesense>=2.2.0.30-5",
+]
+
+# Panthera-HT 6-DOF arm SDK (HighTorque-Robotics).
+# The hightorque_robot wheel itself is NOT on PyPI — you install it from a
+# local file produced by the Panthera-HT_SDK repo (see scripts/install_pi.sh
+# with PANTHERA_SDK=1).
+panthera = [
+    "pin>=2.6.0",
+    "scipy>=1.9",
+]
+
+# Intel RealSense Python bindings — already in the core list because D405
+# is the project's recommended camera, kept here as an alias.
+realsense = [
+    "pyrealsense2>=2.55",
+]
+
+# RK3588 NPU runtime (board-specific Python wheels live in the RK release).
+rknn = [
+    # rknn-toolkit-lite2 is published as a wheel on the airockchip GitHub
+    # release page, NOT PyPI. Install manually on the board:
+    #   uv pip install <path-to>/rknn_toolkit_lite2-*.whl
+]
+
+# Hailo-8 / Hailo-8L runtime + Python bindings.
+# `hailo-platform` Python wheel ships with HailoRT — install HailoRT first.
+# (see docs/HAILO.md). After that:
+#   uv pip install hailo-platform
+hailo = [
+    # hailo-platform>=4.18  — install from the wheel that comes with HailoRT,
+    # not from PyPI. Listed here as documentation; uv won't fetch it.
+]
+
+# Optional: ONNX runtime backend (cross-platform fallback).
+onnx = [
+    "onnxruntime>=1.17",
+]
+
+[dependency-groups]
+# Dev-time tooling. Install with:  uv sync --group dev
+dev = [
+    "pytest>=8",
+    "ruff>=0.5",
+]
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src"]
+
+[tool.uv]
+# Faster Pi installs by preferring binary wheels.
+prerelease = "disallow"
+
+# Use Tsinghua mirror for users in mainland China — uncomment if needed,
+# or set globally via:  uv pip config set global.index-url <mirror>
+# [[tool.uv.index]]
+# url = "https://pypi.tuna.tsinghua.edu.cn/simple"
+# default = true

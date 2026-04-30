@@ -2,7 +2,8 @@
 
 Backends supported:
   - pytorch : load .pt directly (slow on CPU; fine for desktop dev)
-  - ncnn    : load *_ncnn_model directory (recommended for Pi)
+  - ncnn    : load *_ncnn_model directory (recommended for Pi CPU)
+  - hailo   : Hailo-8 / Hailo-8L NPU via HailoRT (recommended for Pi 5 + Hailo-8)
   - rknn    : RK3588 NPU runtime (loaded only when available)
   - onnx    : ONNX runtime (cross-platform fallback)
 
@@ -154,6 +155,77 @@ class RknnDetector(Detector):  # pragma: no cover - hardware specific
 
 
 # --------------------------------------------------------------------------- #
+# Hailo backend (Pi 5 + Hailo-8 / Hailo-8L)
+# --------------------------------------------------------------------------- #
+
+
+class HailoDetector(Detector):  # pragma: no cover - hardware specific
+    """Hailo-8 / Hailo-8L NPU backend.
+
+    Pi 5 + Hailo-8 26 TOPS gives 30+ FPS on YOLOv8n at 640x640. Workflow:
+
+      1. PC: convert best.pt -> best.onnx (Ultralytics export)
+      2. PC: use Hailo Dataflow Compiler to convert ONNX -> .hef
+             (requires calibration set captured with tools/capture_calib_set.py)
+      3. Pi: install HailoRT runtime + hailo-platform Python bindings
+      4. Pi: copy best.hef into models/, set detector.backend: hailo
+
+    See docs/HAILO.md for full step-by-step.
+    """
+
+    def __init__(
+        self,
+        model_path: str,
+        imgsz: int = 640,
+        names: Optional[dict] = None,
+    ) -> None:
+        try:
+            from hailo_platform import (
+                VDevice, HEF, ConfigureParams, FormatType,   # noqa: F401
+                HailoStreamInterface, InputVStreamParams,
+                OutputVStreamParams, InferVStreams,
+            )
+        except ImportError as exc:
+            raise RuntimeError(
+                "hailo_platform not installed. On Pi 5 + Hailo-8:\n"
+                "  Run:  scripts/install_pi.sh  with HAILO_SDK=1 set,\n"
+                "  or follow docs/HAILO.md to install HailoRT + hailo-platform."
+            ) from exc
+
+        self._hef = HEF(model_path)
+        self._device = VDevice()
+        self._network_group = self._device.configure(
+            self._hef,
+            ConfigureParams.create_from_hef(
+                hef=self._hef, interface=HailoStreamInterface.PCIe,
+            ),
+        )[0]
+        self._network_group_params = self._network_group.create_params()
+        self._input_vstreams_params = InputVStreamParams.make(
+            self._network_group, format_type=FormatType.FLOAT32,
+        )
+        self._output_vstreams_params = OutputVStreamParams.make(
+            self._network_group, format_type=FormatType.FLOAT32,
+        )
+        self.imgsz = imgsz
+        self.names = names or {
+            0: "plastic bottle", 1: "glass bottle",
+            2: "mask", 3: "gauze", 4: "injector",
+        }
+
+    def predict(self, frame_bgr: np.ndarray, conf: float = 0.5) -> List[Detection]:
+        # NOTE: Hailo's output layout depends on how you compiled the .hef.
+        # Standard YOLOv8 hef from Hailo Model Zoo emits 3 detection heads
+        # (small/medium/large grids) plus possibly a built-in NMS post-op.
+        # See docs/HAILO.md and Hailo's reference repo for a working pre/post:
+        #   https://github.com/hailo-ai/hailo_model_zoo
+        raise NotImplementedError(
+            "Implement Hailo pre/post-processing for your specific .hef. "
+            "See docs/HAILO.md §4 for the reference pipeline."
+        )
+
+
+# --------------------------------------------------------------------------- #
 # Factory
 # --------------------------------------------------------------------------- #
 
@@ -169,4 +241,6 @@ def build_detector(det_cfg) -> Detector:
         return UltralyticsDetector(model_path, imgsz=imgsz, iou=iou, max_det=max_det)
     if backend == "rknn":
         return RknnDetector(model_path)
+    if backend == "hailo":
+        return HailoDetector(model_path, imgsz=imgsz)
     raise ValueError(f"Unknown detector backend: {backend!r}")

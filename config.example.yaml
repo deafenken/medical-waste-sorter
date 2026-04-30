@@ -1,0 +1,213 @@
+# 医疗废弃物分拣机械臂 配置文件示例
+# 复制本文件为 config.yaml 后按实际情况修改
+# cp config.example.yaml config.yaml
+
+# ============ 相机配置 ============
+camera:
+  # 相机后端: orbbec | realsense | usb
+  #   orbbec    -> Orbbec Astra Pro/Plus，OpenNI2 SDK
+  #   realsense -> Intel RealSense (D405/D435/D435i/D455)，pyrealsense2
+  #   usb       -> 普通 USB UVC 摄像头，仅彩色（无深度，仅用于调试模型）
+  backend: realsense
+
+  # ----- 通用字段 -----
+  # 图像分辨率与帧率（不同后端的合法值不同）
+  #   D405 推荐: 848x480@30 / 1280x720@30 / 640x480@30
+  #   Astra Pro: 640x400@30
+  width: 848
+  height: 480
+  fps: 30
+
+  # 相机内参（pinhole）
+  #   realsense 后端启动时会从设备读取真实值并写到日志，建议跑一次后把
+  #     log 里的 fx/fy/cx/cy 填到这里。否则手眼标定算出来的矩阵会偏。
+  #   orbbec 后端使用厂商出厂值，下面是 Astra Pro 默认。
+  #   D405 848x480 典型值: fx≈430, fy≈430, cx≈424, cy≈240（仅供参考）
+  intrinsics:
+    fx: 430.0
+    fy: 430.0
+    cx: 424.0
+    cy: 240.0
+
+  # 是否水平翻转彩色图
+  #   orbbec    -> 多数 Astra Pro 需要 true（彩色镜头与深度镜像装配）
+  #   realsense -> 一般 false（D405 出厂彩色和深度对齐）
+  #   usb       -> 看你装相机的方向
+  flip_color: false
+
+  # 深度有效范围（mm），超出范围的目标跳过
+  #   D405 工作距离 70-500mm，建议 80~600
+  #   D435i / D455 远距，可以拉到 200~3000
+  #   Astra Pro: 100~800
+  depth_min_mm: 80
+  depth_max_mm: 600
+
+  # =================================================================== #
+  # orbbec 后端字段
+  # =================================================================== #
+  # OpenNI2 SDK driver 路径
+  # Linux ARM64 编译产物: /home/pi/OpenNI2/Bin/Arm64-Release/OpenNI2
+  # Linux x86_64:        /usr/lib/OpenNI2
+  openni_redist_path: /usr/lib/OpenNI2
+  # USB 彩色相机索引（Astra Pro 的 RGB 走独立 UVC 通道）
+  color_device: 0
+
+  # =================================================================== #
+  # realsense 后端字段（backend: realsense 时启用）
+  # =================================================================== #
+  # 多 RealSense 设备时按序列号选；一台时留空
+  # device_serial: "041422074330"
+  # 深度对齐目标: color | depth
+  align_to: color
+  # 启动时是否打印设备真实内参（强烈建议 true，方便填回上面的 intrinsics）
+  log_intrinsics: true
+
+
+# ============ 机械臂配置 ============
+arm:
+  # 后端选择: gcode | panthera_ht
+  #   gcode       -> GRBL/Marlin 桌面臂，G-code over USB-Serial
+  #   panthera_ht -> HighTorque Panthera-HT 6-DOF 协作臂，走 Python SDK
+  backend: gcode
+
+  # ----- 通用字段（所有后端都用）-----
+  # 启动时是否回零
+  home_on_start: true
+
+  # 安全 / 待机位（机械臂坐标系，单位 mm）
+  home_pos: [0, 185, 160]
+
+  # 抓取动作高度（在目标点上方多少 mm 接近、多少 mm 下压）
+  approach_offset_z: 80
+  pick_offset_z: -25
+
+  # 三类废弃物对应的投放位（机械臂坐标 mm）
+  bins:
+    pathological: [170, 0, 160]    # 病理性 (塑料瓶/玻璃瓶)
+    infectious:   [170, 120, 160]  # 感染性 (口罩/纱布)
+    sharps:       [-170, 30, 160]  # 损伤性 (注射器)
+
+  # 抓/放后等待夹爪机械动作的时间（秒）
+  gripper_dwell_s: 3.0
+
+  # =================================================================== #
+  # gcode 后端字段
+  # =================================================================== #
+  port: /dev/ttyUSB0
+  baudrate: 115200
+  timeout_s: 5
+  wait_for_ok: true
+  ack_timeout_s: 10
+
+  # 夹爪 / 吸盘控制指令（GRBL: M3 主轴开 / M5 关；Marlin 可能不同）
+  gripper_close_cmd: "M5"
+  gripper_open_cmd:  "M3"
+
+  # =================================================================== #
+  # panthera_ht 后端字段（backend: panthera_ht 时启用）
+  # =================================================================== #
+  # SDK 配置 YAML 路径（默认读 SDK 自带的 Leader.yaml；想用 Follower.yaml 在这填）
+  # config_path: /path/to/Follower.yaml
+
+  # 关节空间 home 位姿（单位：弧度），覆盖默认 [0, π/2, π/2, 0, 0, 0]
+  # home_joint_rad: [0.0, 1.5708, 1.5708, 0.0, 0.0, 0.0]
+
+  # IK 时使用的末端朝向预设
+  #   down    -> 工具 Z 轴朝下（俯视抓取，默认）
+  #   forward -> 工具 Z 轴朝前（水平作业）
+  approach_pose: down
+
+  # 默认每段移动持续时间（秒），fallback 当无 feed 提示时
+  move_duration_s: 3.0
+
+  # 夹爪参数
+  gripper_speed: 0.5
+  gripper_max_torque: 0.5
+
+  # 6 个关节的最大允许扭矩 (Nm)，前 3 个大臂用大值，后 3 腕部用小值
+  max_joint_torques: [10.0, 10.0, 10.0, 5.0, 5.0, 5.0]
+
+  # 等待 moveJ 到位的容差（弧度）和超时（秒）
+  wait_tolerance_rad: 0.01
+  wait_timeout_s: 15.0
+
+
+# ============ 检测模型配置 ============
+detector:
+  # 推理后端: pytorch | ncnn | rknn | onnx
+  #   pytorch -> 加载 .pt（CPU/GPU），开发调试用
+  #   ncnn    -> Pi 推荐，~3-5x 加速
+  #   rknn    -> RK3588 NPU，需要先离线转换
+  #   onnx    -> 通用，CPU runtime
+  backend: ncnn
+
+  # 模型路径（相对仓库根目录或绝对路径）
+  # ncnn 模式下传入 best_ncnn_model 目录路径
+  model_path: models/best_ncnn_model
+
+  # ----- 推理超参（速度↔精度权衡）-----
+  # 输入分辨率：640 标配；320 更快约4x，但小目标精度会降
+  imgsz: 640
+  # NMS IoU 阈值
+  iou_threshold: 0.7
+  # 单帧最多保留多少个检测框（降低后处理开销）
+  max_det: 100
+
+  # ----- 双阈值（hysteresis）-----
+  # conf_draw    -> 低阈值，凡是高于此就画框（让你能看到模型在想什么）
+  # conf_trigger -> 高阈值，只有高于此才会被纳入抓取候选
+  # 经验值：draw 0.4-0.5，trigger 0.65-0.75
+  conf_draw:    0.40
+  conf_trigger: 0.70
+
+  # （兼容字段）老配置里如果有 conf_threshold，仍然会被读取作为
+  # conf_draw 和 conf_trigger 的回退值，新部署直接用上面两个即可
+  # conf_threshold: 0.62
+
+  # ----- 多帧投票 / 跟踪（强烈建议开）-----
+  # use_tracker：开启后用 IoU 跟踪给每个物体分配 track_id
+  use_tracker: true
+  # vote_window：同一 track 连续被检测到多少帧才会触发抓取
+  # 帧率 ~10 FPS 时建议 3 帧 (~0.3s 等待)；想更稳就调到 5
+  vote_window: 3
+  # IoU 跟踪阈值（两帧之间检测框 IoU 高于此视为同一物体）
+  tracker_iou: 0.3
+  # 一个 track 连续多少帧没匹配上就被淘汰
+  tracker_max_lost: 5
+
+  # ----- 类别 → 分类桶映射（类名必须与训练时 names 一致）-----
+  category_to_bin:
+    plastic bottle: pathological
+    glass bottle:   pathological
+    mask:           infectious
+    gauze:          infectious
+    injector:       sharps
+
+
+# ============ 标定配置 ============
+calibration:
+  # 手眼标定参数文件
+  image_to_arm_npy: save_parms/image_to_arm.npy
+  arm_to_image_npy: save_parms/arm_to_image.npy
+
+  # ArUco 字典与尺寸
+  aruco_dict: DICT_7X7_100
+  marker_size_m: 0.05         # 5cm
+
+  # 末端执行器到 ArUco 中心的偏移（mm，标定时贴在末端的标记位置）
+  end_effector_to_aruco_offset_mm: [0, 35, 0]
+
+  # 标定运动序列文件（默认走 src/calibration_points.py 里的预设）
+  points_module: src.calibration_points
+
+
+# ============ 运行时配置 ============
+runtime:
+  # 是否打开图形窗口预览（树莓派 headless 时改 false）
+  show_window: true
+
+  # 日志级别: DEBUG | INFO | WARNING | ERROR
+  log_level: INFO
+
+  # 处理速率（每多少毫秒推理一次，0 = 全速）
+  inference_interval_ms: 0

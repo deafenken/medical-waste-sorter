@@ -1,0 +1,34 @@
+name: 🔧 硬件 / 协议适配
+description: 我有一台不同型号的机械臂或相机，想问能不能跑
+labels: [hardware]
+body:
+  - type: textarea
+    id: hardware
+    attributes:
+      label: 你的硬件
+      description: 详细说明型号、控制板、固件、通信方式
+      placeholder: |
+        机械臂：xxx
+        控制板：xxx (固件版本 xxx)
+        相机：xxx
+    validations:
+      required: true
+
+  - type: textarea
+    id: protocol
+    attributes:
+      label: 已知通信协议
+      description: 厂商 SDK / G-code / ROS / Modbus / 其他
+    validations:
+      required: true
+
+  - type: textarea
+    id: tried
+    attributes:
+      label: 已经试过什么
+      description: 跑过 tools/port_probe.py 吗？回包是什么？
+
+  - type: textarea
+    id: goal
+    attributes:
+      label: 想达到的效果

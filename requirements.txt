@@ -1,0 +1,38 @@
+# Core
+numpy>=1.24
+opencv-contrib-python>=4.8       # contrib needed for cv2.aruco
+pyyaml>=6.0
+pyserial>=3.5
+
+# Detection
+ultralytics>=8.1                 # provides YOLO + .pt + ncnn export
+
+# Camera bindings — pick whichever you need based on your hardware.
+# Both can coexist; the camera factory only loads the one your config selects.
+
+# Intel RealSense (D405 / D435 / D435i / D455)
+#   Wheels available for x86_64 and ARM64 (cp39-cp312).
+pyrealsense2>=2.55
+
+# Orbbec Astra Pro / Astra+ via OpenNI2
+#   Requires OpenNI2 native libraries already installed on the host.
+#   See README "Camera setup" for build steps on Raspberry Pi.
+primesense>=2.2.0.30-5
+
+# Optional: ONNX runtime (if you choose detector.backend=onnx)
+# onnxruntime>=1.17
+
+# RK3588 only — uncomment when running on RK3588 with rknn-toolkit-lite2 installed
+# rknn-toolkit-lite2
+
+# ------------------------------------------------------------------ #
+# Optional arm backends
+# ------------------------------------------------------------------ #
+# Panthera-HT 6-DOF arm — install the SDK from
+#   https://github.com/HighTorque-Robotics/Panthera-HT_SDK
+# This is NOT a normal pip package; you need to either:
+#   (1) pip install one of the precompiled wheels in motor_whl/  (x86_64 only)
+#   (2) build from source (ARM64 path)
+# Plus its runtime deps:
+# pin>=2.6.0
+# scipy>=1.9.0

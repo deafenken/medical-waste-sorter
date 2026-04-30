@@ -1,0 +1,35 @@
+# Byte-compiled / optimized / DLL files
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+
+# Local virtual environments
+venv/
+.venv/
+env/
+
+# Editor / OS junk
+.idea/
+.vscode/
+.DS_Store
+*.swp
+*.bak
+._*
+Thumbs.db
+
+# Local config (never commit credentials or per-machine paths)
+config.yaml
+
+# Runtime artifacts
+save.jpg
+*.log
+runs/
+output*.mp4
+
+# Exported model artifacts (regenerable from .pt)
+# Comment out if you want to commit your NCNN export
+models/*_ncnn_model/
+models/*.onnx
+models/*.engine
+models/*.rknn

@@ -1,0 +1,200 @@
+name: CI
+
+on:
+  push:
+    branches: [main, master]
+  pull_request:
+    branches: [main, master]
+
+jobs:
+  syntax-and-import:
+    name: Syntax + Import check (Python ${{ matrix.python-version }})
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        python-version: ["3.10", "3.11", "3.12"]
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python-version }}
+          cache: pip
+
+      - name: Install lightweight deps
+        # Skip ultralytics + primesense (heavy / native deps not available
+        # in CI). The non-runtime imports we DO want CI to verify can be
+        # exercised with a stub.
+        run: |
+          python -m pip install --upgrade pip
+          pip install numpy pyyaml pyserial opencv-contrib-python-headless
+
+      - name: py_compile every source file
+        run: |
+          python -m compileall -q src tools
+
+      - name: Verify arm factory rejects unknown backend
+        run: |
+          python -c "
+          from types import SimpleNamespace
+          from src.arms import build_arm
+          try:
+              build_arm(SimpleNamespace(backend='nonexistent'))
+              raise SystemExit('should have raised ValueError')
+          except ValueError as e:
+              assert 'nonexistent' in str(e)
+              print('arm factory error path OK')
+          "
+
+      - name: Verify panthera_ht backend skeleton importable
+        run: |
+          # The wrapper should import cleanly. Instantiation requires the
+          # Panthera SDK so we don't actually call build() in CI.
+          python -c "
+          from src.arms import panthera_ht
+          assert hasattr(panthera_ht, 'PantheraHTArm')
+          assert hasattr(panthera_ht, 'build')
+          assert 'down' in panthera_ht.POSE_PRESETS
+          assert 'forward' in panthera_ht.POSE_PRESETS
+          print('panthera_ht skeleton OK')
+          "
+
+      - name: Verify camera factory rejects unknown backend
+        run: |
+          python -c "
+          from types import SimpleNamespace
+          from src.cameras import build_camera
+          try:
+              build_camera(SimpleNamespace(backend='nonexistent'))
+              raise SystemExit('should have raised ValueError')
+          except ValueError as e:
+              assert 'nonexistent' in str(e)
+              print('camera factory error path OK')
+          "
+
+      - name: Verify camera backends importable
+        run: |
+          # Each module imports lazily so we don't actually need the native
+          # SDKs (openni2 / pyrealsense2) installed in CI.
+          python -c "
+          from src.cameras import orbbec, usb, realsense
+          assert hasattr(orbbec, 'OrbbecCamera')
+          assert hasattr(usb, 'UsbCamera')
+          assert hasattr(realsense, 'RealsenseCamera')
+          for mod in (orbbec, usb, realsense):
+              assert hasattr(mod, 'build')
+          # Intrinsics dataclass round-trip
+          from src.cameras.base import Intrinsics
+          ix = Intrinsics(430.0, 430.0, 424.0, 240.0, 848, 480)
+          d = ix.as_dict()
+          assert d['fx'] == 430.0 and d['width'] == 848
+          print('camera backends OK')
+          "
+
+      - name: Verify camera compat shim
+        run: |
+          python -c "
+          # Old import path must still resolve.
+          from src.camera import OrbbecCamera, UsbCamera, build_camera, open_camera
+          from src.cameras.orbbec import OrbbecCamera as OrbbecCameraNew
+          assert OrbbecCamera is OrbbecCameraNew
+          print('camera compat shim OK')
+          "
+
+      - name: Static import check (config + coords)
+        # These modules don't need camera / serial / model weights.
+        run: |
+          python -c "from src.config import load_config, resolve_path; \
+            cfg = load_config('config.example.yaml'); \
+            assert cfg.camera.intrinsics.fx > 0; \
+            assert resolve_path(cfg.detector.model_path).is_absolute()"
+          python -c "from src.coords import pixel_depth_to_camera; \
+            x, y, z = pixel_depth_to_camera(320, 200, 500, 524, 524, 320, 200); \
+            assert abs(z - 500) < 1e-6"
+
+      - name: Smoke test main.robust_depth_at
+        run: |
+          python -c "import sys, numpy as np; sys.path.insert(0, '.'); \
+            from src.main import robust_depth_at; \
+            d = np.full((400, 640), 500, dtype=np.uint16); d[200, 320] = 0; \
+            assert robust_depth_at(d, 320, 200) == 500.0; \
+            assert robust_depth_at(np.zeros((400, 640), dtype=np.uint16), 320, 200) == 0.0; \
+            print('robust_depth_at OK')"
+
+      - name: Smoke test SimpleTracker
+        run: |
+          python - <<'PY'
+          import sys; sys.path.insert(0, '.')
+          from src.tracker import SimpleTracker, iou_xyxy
+          from src.detector import Detection
+
+          # 1) IoU sanity
+          assert iou_xyxy((0,0,10,10), (0,0,10,10)) == 1.0
+          assert iou_xyxy((0,0,10,10), (20,20,30,30)) == 0.0
+          # 50% area overlap on 100-area boxes -> 25/175 ~= 0.143
+          assert 0.10 < iou_xyxy((0,0,10,10), (5,5,15,15)) < 0.20
+
+          # 2) New detection -> new track id, hits=1
+          tr = SimpleTracker(iou_threshold=0.3, max_lost=3)
+          d1 = Detection(100,100,200,200, 0.9, 0, "plastic bottle")
+          tracks = tr.update([d1])
+          assert len(tracks) == 1
+          assert tracks[0].consecutive_hits == 1
+          assert tracks[0].track_id == 0
+
+          # 3) Same detection again -> hits should grow, same id
+          tracks = tr.update([d1])
+          assert tracks[0].consecutive_hits == 2
+          assert tracks[0].track_id == 0
+
+          # 4) Different class at same box -> different id (class-aware)
+          d2 = Detection(100,100,200,200, 0.9, 2, "mask")
+          tracks = tr.update([d2])
+          ids = {t.track_id for t in tracks}
+          assert len(ids) == 2
+
+          # 5) Miss frames cause aging then drop
+          tr2 = SimpleTracker(iou_threshold=0.3, max_lost=2)
+          tr2.update([d1])
+          for _ in range(3):
+              tr2.update([])  # no matches
+          assert len(tr2.tracks) == 0  # dropped after 2 lost frames
+
+          # 6) best_stable_track only fires after vote_window
+          tr3 = SimpleTracker()
+          tr3.update([d1])
+          assert tr3.best_stable_track(min_hits=3, min_conf=0.7) is None
+          tr3.update([d1])
+          tr3.update([d1])
+          best = tr3.best_stable_track(min_hits=3, min_conf=0.7)
+          assert best is not None and best.consecutive_hits == 3
+          print("SimpleTracker OK")
+          PY
+
+      - name: Verify model class names match config mapping
+        run: |
+          python - <<'PY'
+          import yaml
+          # Class names hard-coded based on inspection of models/best.pt.
+          # If you retrain, update both this list and config.example.yaml.
+          MODEL_NAMES = {
+              0: "plastic bottle",
+              1: "glass bottle",
+              2: "mask",
+              3: "gauze",
+              4: "injector",
+          }
+          with open("config.example.yaml") as fh:
+              cfg = yaml.safe_load(fh)
+          mapping = cfg["detector"]["category_to_bin"]
+          missing = [n for n in MODEL_NAMES.values() if n not in mapping]
+          extra = [k for k in mapping if k not in MODEL_NAMES.values()]
+          if missing:
+              raise SystemExit(f"category_to_bin missing classes: {missing}")
+          if extra:
+              raise SystemExit(f"category_to_bin has unknown classes: {extra}")
+          print("config <-> model.names match ok")
+          PY

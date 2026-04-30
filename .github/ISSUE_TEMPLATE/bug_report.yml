@@ -1,0 +1,74 @@
+name: 🐛 Bug Report
+description: 系统跑不起来或抓取不正常
+labels: [bug]
+body:
+  - type: textarea
+    id: what-happened
+    attributes:
+      label: 现象
+      description: 实际看到的错误 / 异常行为
+      placeholder: |
+        例：跑 python -m src.main 后机械臂回零正常，
+        但识别到塑料瓶后臂去抓的位置在瓶子右侧 3cm。
+    validations:
+      required: true
+
+  - type: dropdown
+    id: stage
+    attributes:
+      label: 哪一步出问题
+      options:
+        - install_pi.sh 安装阶段
+        - tools/port_probe.py 串口探测
+        - tools/depth_inspect.py 深度查看
+        - tools/aruco_demo.py ArUco 检测
+        - python -m src.calibration 手眼标定
+        - python -m src.main 主流水线
+        - 其他 / 不确定
+    validations:
+      required: true
+
+  - type: input
+    id: platform
+    attributes:
+      label: 平台
+      placeholder: e.g. Raspberry Pi 5 8GB / Raspberry Pi OS Bookworm 64-bit
+    validations:
+      required: true
+
+  - type: input
+    id: arm
+    attributes:
+      label: 机械臂型号 / 控制板
+      placeholder: e.g. Marlin firmware on SKR mini E3 / GRBL on Arduino Uno
+    validations:
+      required: true
+
+  - type: input
+    id: camera
+    attributes:
+      label: 相机型号
+      placeholder: e.g. Orbbec Astra Pro Plus
+
+  - type: textarea
+    id: lsusb
+    attributes:
+      label: lsusb 输出
+      render: shell
+      description: 跑 `lsusb` 把和相机/机械臂相关的几行贴这里
+
+  - type: textarea
+    id: config
+    attributes:
+      label: config.yaml 关键字段
+      render: yaml
+      description: 把 camera / arm / detector 三段贴出来（注意去掉个人路径）
+
+  - type: textarea
+    id: logs
+    attributes:
+      label: 运行日志
+      render: shell
+      description: 错误堆栈或异常前后 30 行日志
+    validations:
+      required: true

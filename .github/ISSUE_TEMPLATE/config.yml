@@ -1,0 +1,11 @@
+blank_issues_enabled: false
+contact_links:
+  - name: 📖 故障排查文档
+    url: https://github.com/deafenken/medical-waste-sorter/blob/main/docs/TROUBLESHOOTING.md
+    about: 提 issue 之前先翻一下，常见报错都有解决方案
+  - name: 📐 标定相关问题
+    url: https://github.com/deafenken/medical-waste-sorter/blob/main/docs/CALIBRATION.md
+    about: 手眼标定误差大、ArUco 不识别等
+  - name: 🚀 RK3588 移植问题
+    url: https://github.com/deafenken/medical-waste-sorter/blob/main/docs/RK3588.md
+    about: NPU 推理、模型量化相关

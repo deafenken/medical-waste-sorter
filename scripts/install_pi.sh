@@ -192,16 +192,36 @@ https://librealsense.intel.com/Debian/apt-repo $DISTRO main" \
         sudo udevadm trigger
         popd >/dev/null
 
-        # Symlink the system-installed pyrealsense2 into the venv site-packages
-        # so the venv Python can import it without PYTHONPATH gymnastics.
+        # `sudo make install` ran as root, so anything cmake dropped into
+        # the venv (we passed -DPYTHON_EXECUTABLE=$VENV_PY which makes
+        # cmake install pyrealsense2 directly into .venv/.../site-packages)
+        # is now root-owned. Hand it back to $USER so uv / pip don't choke
+        # on later steps.
+        sudo chown -R "$USER:$USER" "$REPO_ROOT/.venv"
+
+        # If cmake didn't put pyrealsense2 in the venv directly (older
+        # librealsense versions, custom CMAKE_INSTALL_PREFIX, etc.), fall
+        # back to symlinking the system-installed copy. We look for the
+        # actual Python package — a directory named exactly `pyrealsense2`
+        # under a `python*/` or `dist-packages` path — NOT the cmake
+        # config dir at /usr/local/lib/cmake/pyrealsense2 which the old
+        # heuristic falsely matched.
         SITE_PKGS="$REPO_ROOT/.venv/lib/python3.11/site-packages"
-        SYS_RS_DIR=$(find /usr/local/lib /usr/lib -type d -name pyrealsense2 2>/dev/null | head -1)
-        if [ -n "$SYS_RS_DIR" ] && [ -d "$SITE_PKGS" ]; then
-            ln -snf "$SYS_RS_DIR" "$SITE_PKGS/pyrealsense2"
-            echo "[install] symlinked $SYS_RS_DIR -> $SITE_PKGS/pyrealsense2"
+        if [ -f "$SITE_PKGS/pyrealsense2/__init__.py" ]; then
+            echo "[install] pyrealsense2 already installed in venv by cmake — no symlink needed"
         else
-            echo "[install] WARN: could not locate installed pyrealsense2 dir; manual symlink needed"
-            echo "[install]   try: find /usr/local /usr/lib -name 'pyrealsense2*' 2>/dev/null"
+            SYS_RS_DIR=$(find /usr/local/lib /usr/lib \
+                -type d -name pyrealsense2 \
+                \( -path '*python*' -o -path '*dist-packages*' \) \
+                2>/dev/null | head -1)
+            if [ -n "$SYS_RS_DIR" ] && [ -d "$SITE_PKGS" ]; then
+                rm -rf "$SITE_PKGS/pyrealsense2"
+                ln -s "$SYS_RS_DIR" "$SITE_PKGS/pyrealsense2"
+                echo "[install] symlinked $SYS_RS_DIR -> $SITE_PKGS/pyrealsense2"
+            else
+                echo "[install] WARN: pyrealsense2 not found in venv or system Python dirs"
+                echo "[install]   try: find /usr/local /usr/lib -name 'pyrealsense2*' 2>/dev/null"
+            fi
         fi
     fi
 

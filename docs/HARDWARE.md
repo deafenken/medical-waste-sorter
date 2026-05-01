@@ -277,14 +277,28 @@ git config --global https.proxy socks5://127.0.0.1:10808
 ```bash
 git config --global url."https://ghfast.top/https://github.com/".insteadOf "https://github.com/"
 
-# pip 清华源（写到配置文件，所有 pip / uv 都生效）
+# pip 清华源（pip 直接生效；uv 不读 pip.conf，要单独配 env，见下）
 mkdir -p ~/.config/pip
 cat > ~/.config/pip/pip.conf <<'EOF'
 [global]
 index-url = https://pypi.tuna.tsinghua.edu.cn/simple
 trusted-host = pypi.tuna.tsinghua.edu.cn
 EOF
+
+# uv 必须额外两个环境变量（写进 ~/.bashrc 永久生效）
+# 1. uv 自己的 PyPI 源（不继承 pip.conf）
+# 2. uv venv --python 3.11 时下载 standalone Python 走 ghfast.top
+#    （uv 直接 HTTP 拉 github releases，不走 git，所以 insteadOf 无效）
+cat >> ~/.bashrc <<'EOF'
+export UV_INDEX_URL="https://pypi.tuna.tsinghua.edu.cn/simple"
+export UV_PYTHON_INSTALL_MIRROR="https://ghfast.top/https://github.com/astral-sh/python-build-standalone/releases/download"
+EOF
+source ~/.bashrc
 ```
+
+> ⚠️ **不配第二条会卡 10+ 分钟**：`uv venv --python 3.11` 在背地里下载 ~30MB 的 Python
+> standalone 包，直连 github.com 在国内基本拉不动，且 uv 不打印任何进度，看上去像死了。
+> `scripts/install_pi.sh` 默认会自动 export 这两个变量（设 `NO_CN_MIRROR=1` 可跳过）。
 
 ---
 
@@ -346,6 +360,7 @@ lsusb -t                              # 看 USB 拓扑 + 速率（5000M=USB3, 48
 | Pi 拿到 `192.168.137.x` IP，跟 Mac 不通 | Pi 走有线，落到不同 VLAN | Pi 改走实验室 Wi-Fi |
 | `command not found: pip` | Bookworm 默认无系统 pip | 走 uv（`./scripts/install_pi.sh` 装好） |
 | 抓 `192.168.137.1:10808` SSH 超时 | 旧的 SSH `~/.ssh/config` 有 ProxyCommand | `grep -i proxy ~/.ssh/config` |
+| `uv venv --python 3.11` 静默卡 10+ 分钟，`ps` 看进程还在但没输出 | uv 在背地里从 `github.com/astral-sh/python-build-standalone` 直链下载 Python，国内基本拉不动；`pip.conf` / `git insteadOf` 都救不了它 | export `UV_PYTHON_INSTALL_MIRROR` 走 ghfast.top + `UV_INDEX_URL` 走清华，详见 §7.5；`scripts/install_pi.sh` 已默认 export，可设 `NO_CN_MIRROR=1` 关闭 |
 
 ---
 

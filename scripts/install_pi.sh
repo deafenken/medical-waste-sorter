@@ -48,9 +48,26 @@ export PATH="$HOME/.local/bin:$PATH"
 [ -f "$HOME/.local/bin/env" ] && source "$HOME/.local/bin/env"
 uv --version
 
+# ---------- 3a. China mirror auto-config (opt-out via NO_CN_MIRROR=1) ----------
+# uv downloads Python 3.11 standalone builds from github.com/astral-sh/python-
+# build-standalone — that direct HTTP fetch is NOT covered by the user's
+# `git config insteadOf` rewrite (which only affects `git clone`). On
+# mainland China networks `uv venv` will silently hang for 10+ minutes
+# trying to reach github.com. Same story for PyPI vs Tsinghua.
+#
+# These two env vars route uv through ghfast.top + Tsinghua so first-time
+# bootstrap actually finishes. Set NO_CN_MIRROR=1 to disable.
+if [ "${NO_CN_MIRROR:-0}" != "1" ]; then
+    : "${UV_PYTHON_INSTALL_MIRROR:=https://ghfast.top/https://github.com/astral-sh/python-build-standalone/releases/download}"
+    : "${UV_INDEX_URL:=https://pypi.tuna.tsinghua.edu.cn/simple}"
+    export UV_PYTHON_INSTALL_MIRROR UV_INDEX_URL
+    echo "[install] CN mirrors enabled (UV_PYTHON_INSTALL_MIRROR=ghfast.top, UV_INDEX_URL=tsinghua)"
+    echo "[install]   set NO_CN_MIRROR=1 to disable"
+fi
+
 # ---------- 4. Python project: create venv + install core deps ----------
 echo "[install] uv sync (core deps only — extras come below)"
-uv venv --python 3.11 .venv
+uv venv --python 3.11 --clear .venv
 # Install core deps from pyproject.toml
 uv sync
 

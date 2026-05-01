@@ -211,6 +211,9 @@ The `docs/` tree is the source of truth for hardware-specific procedures.
 Keep the linked set in `README.md` "目录结构" in sync when adding a doc.
 
 - `docs/DEPLOY.md` — phase-by-phase first-time bringup
+- `docs/HARDWARE.md` — single-source-of-truth for THIS deployment's
+  hardware: Pi 5 ports, D405 specs, Panthera-HT spec table, Hailo-8,
+  power chain, lab network topology, known-pitfall lookup
 - `docs/HAILO.md` — Hailo-8 .hef compilation + HailoRT install
 - `docs/PANTHERA_HT.md` — 6-DOF arm SDK adaptation
 - `docs/CALIBRATION.md` — hand-eye procedure deep-dive

@@ -101,6 +101,7 @@ medical-waste-sorter/
 │
 └── docs/
     ├── DEPLOY.md                  -- ⭐ 完整部署流程（从开箱到跑起来）
+    ├── HARDWARE.md                -- ⭐ 实际部署硬件档案（型号/接线/网络/坑）
     ├── HAILO.md                   -- Hailo-8 NPU 部署指南（Pi 5 + Hailo-8 26 TOPS）
     ├── OPTIMIZATION.md            -- 识别模型优化（投票/双阈值/INT8）
     ├── PANTHERA_HT.md             -- Panthera-HT 6DOF 臂适配档案（FDCAN）

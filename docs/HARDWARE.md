@@ -50,12 +50,16 @@ vcgencmd measure_temp                        # 满载稳定 < 70°C OK；> 80°C
 
 | 项 | 值 |
 |---|---|
-| OS | Raspberry Pi OS (64-bit) Bookworm |
-| Python | 3.11 (uv 管理) |
+| OS | **Ubuntu 24.04.4 LTS (noble) ARM64** |
+| Python | 3.11.15 (uv 管理；系统 Python 是 3.12.3 但项目锁 3.11) |
 | 包管理 | uv（不是 pip + venv） |
 | 网络栈 | NetworkManager (`nmcli` 命令) |
 | 主机名 | `selabpi5` |
 | 用户名 | `winbeau` |
+
+> ⚠️ **不是 Raspberry Pi OS Bookworm**：实际部署用的是 Ubuntu noble。
+> 影响：Intel librealsense 的 apt 源**没 noble 包**，所以 D405 必须源码
+> 编译 librealsense（脚本 `REALSENSE_FROM_SOURCE=1` 自动处理）。
 
 ---
 
@@ -361,6 +365,7 @@ lsusb -t                              # 看 USB 拓扑 + 速率（5000M=USB3, 48
 | `command not found: pip` | Bookworm 默认无系统 pip | 走 uv（`./scripts/install_pi.sh` 装好） |
 | 抓 `192.168.137.1:10808` SSH 超时 | 旧的 SSH `~/.ssh/config` 有 ProxyCommand | `grep -i proxy ~/.ssh/config` |
 | `uv venv --python 3.11` 静默卡 10+ 分钟，`ps` 看进程还在但没输出 | uv 在背地里从 `github.com/astral-sh/python-build-standalone` 直链下载 Python，国内基本拉不动；`pip.conf` / `git insteadOf` 都救不了它 | export `UV_PYTHON_INSTALL_MIRROR` 走 ghfast.top + `UV_INDEX_URL` 走清华，详见 §7.5；`scripts/install_pi.sh` 已默认 export，可设 `NO_CN_MIRROR=1` 关闭 |
+| `import pyrealsense2` → `ModuleNotFoundError`，`rs-enumerate-devices not found` | Ubuntu noble + aarch64 上 PyPI **没** `pyrealsense2` wheel，且 Intel apt 源**没有 noble 的包**——脚本旧版本两步都静默吞错 | 用 `REALSENSE_FROM_SOURCE=1 ./scripts/install_pi.sh` 源码编译 librealsense（30-45 分钟）。脚本会自动把 `pyrealsense2` 软链进 venv |
 
 ---
 

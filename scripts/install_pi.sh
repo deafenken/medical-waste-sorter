@@ -99,27 +99,109 @@ if [ "${ORBBEC_SDK:-0}" = "1" ]; then
 fi
 
 # ---------- 4b. Intel RealSense (default for D405 users) ----------
+# Three install paths depending on host:
+#   x86_64 / Debian bookworm / Ubuntu jammy   → Intel apt repo (fast, has wheels)
+#   Ubuntu noble + aarch64 (Pi 5 Ubuntu)      → must source-build librealsense
+#                                               (apt repo has NO noble packages)
+#   Other                                     → manual; we print instructions
+#
+# Set REALSENSE_FROM_SOURCE=1 to force the source-build path explicitly
+# (~30-45 min on Pi 5). Set REALSENSE_SDK=0 to skip the whole block.
 if [ "${REALSENSE_SDK:-1}" = "1" ]; then
     echo "[install] installing Intel RealSense stack"
-    if ! command -v rs-enumerate-devices >/dev/null 2>&1; then
-        # Try Intel apt repo first
-        echo "[install] adding Intel RealSense apt repo"
+    DISTRO="$(lsb_release -cs 2>/dev/null || echo unknown)"
+    ARCH="$(uname -m)"
+
+    # Decide whether Intel's apt repo will actually have packages for this host.
+    APT_REPO_HAS_PACKAGES="no"
+    case "$DISTRO" in
+        bookworm|bullseye|jammy|focal) APT_REPO_HAS_PACKAGES="yes" ;;
+    esac
+    if [ "$ARCH" = "x86_64" ] && [ "$APT_REPO_HAS_PACKAGES" = "no" ]; then
+        # On x86_64 the repo usually has SOMETHING even for newer distros
+        APT_REPO_HAS_PACKAGES="yes"
+    fi
+
+    if [ "$APT_REPO_HAS_PACKAGES" = "yes" ] && ! command -v rs-enumerate-devices >/dev/null 2>&1; then
+        echo "[install] adding Intel RealSense apt repo for $DISTRO/$ARCH"
         sudo mkdir -p /etc/apt/keyrings
         curl -sSf https://librealsense.intel.com/Debian/librealsense.pgp \
             | sudo tee /etc/apt/keyrings/librealsense.pgp >/dev/null \
-            || echo "[install] WARNING: keyring add failed, continuing"
-        DISTRO="$(lsb_release -cs 2>/dev/null || echo bookworm)"
+            || echo "[install] WARN: keyring add failed, continuing"
         echo "deb [signed-by=/etc/apt/keyrings/librealsense.pgp] \
 https://librealsense.intel.com/Debian/apt-repo $DISTRO main" \
             | sudo tee /etc/apt/sources.list.d/librealsense.list >/dev/null
-        sudo apt-get update || true
+        sudo apt-get update
         sudo apt-get install -y librealsense2-utils librealsense2-dev \
-            || echo "[install] apt install failed; relying on pip wheel"
+            || { echo "[install] ERROR: apt install of librealsense failed."; \
+                 echo "[install]   Rerun with REALSENSE_FROM_SOURCE=1 to source-build."; }
+    elif [ "${REALSENSE_FROM_SOURCE:-0}" != "1" ]; then
+        echo "[install] NOTE: $DISTRO/$ARCH is not covered by Intel's RealSense apt repo."
+        echo "[install]       Skipping apt step. To install RealSense, rerun with:"
+        echo "[install]           REALSENSE_FROM_SOURCE=1 ./scripts/install_pi.sh"
+        echo "[install]       (this source-builds librealsense, ~30-45 min on Pi 5)"
     fi
-    # pyrealsense2 is in the core deps already (pyproject.toml). Sanity check.
-    python -c "import pyrealsense2 as rs; print('pyrealsense2', rs.__version__)" \
-        2>/dev/null \
-        || echo "[install] pyrealsense2 import failed — see TROUBLESHOOTING.md"
+
+    # ---- 4b-source. Source-build librealsense + pyrealsense2 (opt-in) ----
+    if [ "${REALSENSE_FROM_SOURCE:-0}" = "1" ]; then
+        echo "[install] REALSENSE_FROM_SOURCE=1 — source-building librealsense"
+        echo "[install]   estimated 30-45 min on Pi 5 (build + sudo make install)"
+
+        sudo apt-get install -y \
+            libssl-dev libusb-1.0-0-dev libudev-dev pkg-config \
+            libgtk-3-dev libglfw3-dev libgl1-mesa-dev libglu1-mesa-dev \
+            python3-dev cmake build-essential
+
+        LIBRS_DIR="$HOME/librealsense"
+        if [ ! -d "$LIBRS_DIR" ]; then
+            git clone --depth 1 https://github.com/IntelRealSense/librealsense.git "$LIBRS_DIR"
+        fi
+
+        # Build using the venv's Python so the bindings target Python 3.11.
+        VENV_PY="$REPO_ROOT/.venv/bin/python"
+        if [ ! -x "$VENV_PY" ]; then
+            echo "[install] ERROR: venv Python not found at $VENV_PY"
+            exit 1
+        fi
+
+        pushd "$LIBRS_DIR" >/dev/null
+        mkdir -p build && cd build
+        cmake .. \
+            -DCMAKE_BUILD_TYPE=Release \
+            -DBUILD_EXAMPLES=false \
+            -DBUILD_GRAPHICAL_EXAMPLES=false \
+            -DBUILD_PYTHON_BINDINGS=true \
+            -DPYTHON_EXECUTABLE="$VENV_PY" \
+            -DCHECK_FOR_UPDATES=false
+        make -j4
+        sudo make install
+        sudo cp ../config/99-realsense-libusb.rules /etc/udev/rules.d/
+        sudo udevadm control --reload-rules
+        sudo udevadm trigger
+        popd >/dev/null
+
+        # Symlink the system-installed pyrealsense2 into the venv site-packages
+        # so the venv Python can import it without PYTHONPATH gymnastics.
+        SITE_PKGS="$REPO_ROOT/.venv/lib/python3.11/site-packages"
+        SYS_RS_DIR=$(find /usr/local/lib /usr/lib -type d -name pyrealsense2 2>/dev/null | head -1)
+        if [ -n "$SYS_RS_DIR" ] && [ -d "$SITE_PKGS" ]; then
+            ln -snf "$SYS_RS_DIR" "$SITE_PKGS/pyrealsense2"
+            echo "[install] symlinked $SYS_RS_DIR -> $SITE_PKGS/pyrealsense2"
+        else
+            echo "[install] WARN: could not locate installed pyrealsense2 dir; manual symlink needed"
+            echo "[install]   try: find /usr/local /usr/lib -name 'pyrealsense2*' 2>/dev/null"
+        fi
+    fi
+
+    # Sanity check (loud — no stderr suppression this time).
+    if python -c "import pyrealsense2 as rs; print('[install] pyrealsense2', rs.__version__, 'OK')"; then
+        :
+    else
+        echo "[install] WARN: pyrealsense2 import failed."
+        echo "[install]   - On aarch64 + Ubuntu noble, rerun with REALSENSE_FROM_SOURCE=1"
+        echo "[install]   - On x86_64 / bookworm, check the apt step above for errors"
+        echo "[install]   - See docs/TROUBLESHOOTING.md"
+    fi
 fi
 
 # ---------- 4c. Hailo-8 / Hailo-8L (only if HAILO_SDK=1) ----------

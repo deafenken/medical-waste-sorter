@@ -154,6 +154,26 @@ https://librealsense.intel.com/Debian/apt-repo $DISTRO main" \
         echo "[install]       (this source-builds librealsense, ~30-45 min on Pi 5)"
     fi
 
+    # ---- 4b-recover. Re-install pyrealsense2 into venv if it's missing ----
+    # `uv venv --clear .venv` at the top of every run wipes the venv. cmake's
+    # earlier install put pyrealsense2 *only* in the venv (because we passed
+    # -DPYTHON_EXECUTABLE=$VENV_PY), so it's gone too. If we still have the
+    # built librealsense tree in ~/librealsense/build, we can re-run just
+    # `sudo make install` (~30s, no recompile) to put pyrealsense2 back —
+    # without needing REALSENSE_FROM_SOURCE=1 every time.
+    LIBRS_BUILD="$HOME/librealsense/build"
+    SITE_PKGS_PRS="$REPO_ROOT/.venv/lib/python3.11/site-packages/pyrealsense2"
+    if [ ! -f "$SITE_PKGS_PRS/__init__.py" ] \
+       && [ -f "$LIBRS_BUILD/wrappers/python/CMakeFiles/pyrealsense2.dir/build.make" ] \
+       && [ "${REALSENSE_FROM_SOURCE:-0}" != "1" ]; then
+        echo "[install] pyrealsense2 missing from venv but librealsense build tree exists"
+        echo "[install]   re-running sudo make install (~30s, no recompile)"
+        pushd "$LIBRS_BUILD" >/dev/null
+        sudo make install
+        popd >/dev/null
+        sudo chown -R "$USER:$USER" "$REPO_ROOT/.venv"
+    fi
+
     # ---- 4b-source. Source-build librealsense + pyrealsense2 (opt-in) ----
     if [ "${REALSENSE_FROM_SOURCE:-0}" = "1" ]; then
         echo "[install] REALSENSE_FROM_SOURCE=1 — source-building librealsense"

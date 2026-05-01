@@ -246,7 +246,9 @@ https://librealsense.intel.com/Debian/apt-repo $DISTRO main" \
     fi
 
     # Sanity check (loud — no stderr suppression this time).
-    if python -c "import pyrealsense2 as rs; print('[install] pyrealsense2', rs.__version__, 'OK')"; then
+    # Note: pyrealsense2 doesn't reliably expose __version__; use rs.context()
+    # so we verify the binding can actually link against librealsense.so.
+    if python -c "import pyrealsense2 as rs; rs.context(); print('[install] pyrealsense2 OK')"; then
         :
     else
         echo "[install] WARN: pyrealsense2 import failed."
@@ -299,26 +301,41 @@ if [ "${PANTHERA_SDK:-0}" = "1" ]; then
         git clone https://github.com/HighTorque-Robotics/Panthera-HT_SDK.git \
             "$PANTHERA_DIR"
     fi
+
+    # The SDK ships precompiled wheels for cp39/310/311/312 on both x86_64
+    # and aarch64 — under panthera_python/motor_whl/. Use the right one for
+    # the current Python's tag instead of source-building. Source build was
+    # the previous fallback; we keep it as last resort because the build
+    # produces .so under a build/ dir but no setup.py to install it into
+    # the venv (so `import hightorque_robot` would still fail).
     ARCH="$(uname -m)"
-    if [ "$ARCH" = "x86_64" ]; then
-        WHL=$(ls "$PANTHERA_DIR/panthera_python/motor_whl/"hightorque_robot-*-cp310-cp310-linux_x86_64.whl 2>/dev/null | head -1 || true)
-        if [ -n "$WHL" ]; then
-            uv pip install "$WHL"
-        else
-            echo "[install] no x86_64 wheel found; falling back to source build"
-            ARCH="needs-source-build"
-        fi
-    fi
-    if [ "$ARCH" != "x86_64" ]; then
-        echo "[install] $ARCH detected; building Panthera SDK from source"
+    PY_TAG="$(python -c 'import sys; print(f"cp{sys.version_info.major}{sys.version_info.minor}")')"
+    WHL_PATTERN="$PANTHERA_DIR/panthera_python/motor_whl/hightorque_robot-*-${PY_TAG}-${PY_TAG}-linux_${ARCH}.whl"
+    WHL=$(ls $WHL_PATTERN 2>/dev/null | sort -V | tail -1 || true)
+
+    if [ -n "$WHL" ]; then
+        echo "[install] installing prebuilt Panthera wheel for $ARCH/$PY_TAG: $(basename "$WHL")"
+        uv pip install --force-reinstall "$WHL"
+    else
+        echo "[install] WARN: no prebuilt wheel matched $WHL_PATTERN"
+        echo "[install]       available wheels:"
+        ls "$PANTHERA_DIR/panthera_python/motor_whl/" 2>/dev/null | sed 's/^/[install]         /'
+        echo "[install]       falling back to source build (slow, may not produce importable module)"
         cd "$PANTHERA_DIR/panthera_cpp/motor_cpp" \
             && mkdir -p build && cd build && cmake .. && make -j"$(nproc)"
         cd "$PANTHERA_DIR/panthera_python" \
             && mkdir -p build && cd build && cmake .. && make -j"$(nproc)"
         cd "$PANTHERA_DIR/panthera_python" && uv pip install -r requirements.txt
         cd "$REPO_ROOT"
-        echo "[install] source build done; verify with"
-        echo "          python -c 'import hightorque_robot; print(\"ok\")'"
+    fi
+
+    # Verify the binding actually imports — the previous DONE banner lied
+    # by hardcoding "yes" based on the env var alone.
+    if python -c "import hightorque_robot; print('[install] hightorque_robot OK')"; then
+        :
+    else
+        echo "[install] WARN: hightorque_robot import failed despite install attempt."
+        echo "[install]       check: pip show hightorque_robot"
     fi
 fi
 

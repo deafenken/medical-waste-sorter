@@ -122,6 +122,18 @@ if [ "${REALSENSE_SDK:-1}" = "1" ]; then
         APT_REPO_HAS_PACKAGES="yes"
     fi
 
+    # Clean up stale apt source from earlier script versions that wrongly
+    # added librealsense.list on noble/aarch64 (the InRelease GPG key was
+    # never properly imported, so every later `apt-get update` fails with
+    # NO_PUBKEY FB0B24895113F120 and blocks ALL subsequent apt installs).
+    if [ "$APT_REPO_HAS_PACKAGES" = "no" ] \
+       && [ -f /etc/apt/sources.list.d/librealsense.list ]; then
+        echo "[install] removing stale librealsense apt source (no packages for $DISTRO/$ARCH)"
+        sudo rm -f /etc/apt/sources.list.d/librealsense.list \
+                   /etc/apt/keyrings/librealsense.pgp
+        sudo apt-get update -qq || true
+    fi
+
     if [ "$APT_REPO_HAS_PACKAGES" = "yes" ] && ! command -v rs-enumerate-devices >/dev/null 2>&1; then
         echo "[install] adding Intel RealSense apt repo for $DISTRO/$ARCH"
         sudo mkdir -p /etc/apt/keyrings
